@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package csv
+package gncsv
 
 import (
 	"errors"
@@ -23,6 +23,7 @@ type readTest struct {
 
 	// These fields are copied into the Reader
 	Comma              rune
+	Quote              rune
 	Comment            rune
 	UseFieldsPerRecord bool // false (default) means FieldsPerRecord is -1
 	FieldsPerRecord    int
@@ -114,6 +115,16 @@ field"`,
 	Name:   "NoComment",
 	Input:  "§#1,§2,§3\n¶§a,§b,§c",
 	Output: [][]string{{"#1", "2", "3"}, {"a", "b", "c"}},
+}, {
+	Name:   "CustomQuotes",
+	Input:  `§'a word, a char',§12,§a,§b`,
+	Output: [][]string{{`a word, a char`, `12`, `a`, `b`}},
+	Quote:  '\'',
+}, {
+	Name:   "RareQuotes",
+	Input:  `§'a word,§ a char',§12,§a,§b`,
+	Output: [][]string{{`'a word`, ` a char'`, `12`, `a`, `b`}},
+	Quote:  rune(7), // bell
 }, {
 	Name:       "LazyQuotes",
 	Input:      `§a "word",§"1"2",§a",§"b`,
@@ -410,6 +421,9 @@ func TestRead(t *testing.T) {
 
 		if tt.Comma != 0 {
 			r.Comma = tt.Comma
+		}
+		if tt.Quote != 0 {
+			r.Quote = tt.Quote
 		}
 		r.Comment = tt.Comment
 		if tt.UseFieldsPerRecord {

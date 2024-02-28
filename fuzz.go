@@ -4,7 +4,7 @@
 
 //go:build gofuzz
 
-package csv
+package gncsv
 
 import (
 	"bytes"

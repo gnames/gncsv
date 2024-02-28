@@ -1,8 +1,9 @@
 // Copyright 2011 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+// This code is a fork of the Go standard library's encoding/csv package.
 
-// Package csv reads and writes comma-separated values (CSV) files.
+// Package gncsv reads and writes comma-separated values (CSV) files.
 // There are many kinds of CSV files; this package supports the format
 // described in RFC 4180.
 //
@@ -49,7 +50,7 @@
 //
 //	{`Multi-line
 //	field`, `comma is ,`}
-package csv
+package gncsv
 
 import (
 	"bufio"
@@ -112,7 +113,14 @@ type Reader struct {
 	// It is set to comma (',') by NewReader.
 	// Comma must be a valid rune and must not be \r, \n,
 	// or the Unicode replacement character (0xFFFD).
+	// It must also not be equal to Quote.
 	Comma rune
+
+	// Quote is a quoting character. It is set to double quote ('"')
+	// by NewReader. Quote must be a valid rune and must not be \r, \n,
+	// or the Unicode replacement character (0xFFFD). It should be
+	// different from Comma.
+	Quote rune
 
 	// Comment, if not 0, is the comment character. Lines beginning with the
 	// Comment character without preceding whitespace are ignored.
@@ -180,6 +188,7 @@ type Reader struct {
 func NewReader(r io.Reader) *Reader {
 	return &Reader{
 		Comma: ',',
+		Quote: '"',
 		r:     bufio.NewReader(r),
 	}
 }
@@ -319,7 +328,7 @@ func (r *Reader) readRecord(dst []string) ([]string, error) {
 
 	// Parse each field in the record.
 	var err error
-	const quoteLen = len(`"`)
+	quoteLen := utf8.RuneLen(r.Quote)
 	commaLen := utf8.RuneLen(r.Comma)
 	recLine := r.numLine // Starting line for record
 	r.recordBuffer = r.recordBuffer[:0]
@@ -339,7 +348,7 @@ parseField:
 			line = line[i:]
 			pos.col += i
 		}
-		if len(line) == 0 || line[0] != '"' {
+		if len(line) == 0 || rune(line[0]) != r.Quote {
 			// Non-quoted string field
 			i := bytes.IndexRune(line, r.Comma)
 			field := line
@@ -350,7 +359,7 @@ parseField:
 			}
 			// Check to make sure a quote does not appear in field.
 			if !r.LazyQuotes {
-				if j := bytes.IndexByte(field, '"'); j >= 0 {
+				if j := bytes.IndexRune(field, r.Quote); j >= 0 {
 					col := pos.col + j
 					err = &ParseError{StartLine: recLine, Line: r.numLine, Column: col, Err: ErrBareQuote}
 					break parseField
@@ -371,16 +380,16 @@ parseField:
 			line = line[quoteLen:]
 			pos.col += quoteLen
 			for {
-				i := bytes.IndexByte(line, '"')
+				i := bytes.IndexRune(line, r.Quote)
 				if i >= 0 {
 					// Hit next quote.
 					r.recordBuffer = append(r.recordBuffer, line[:i]...)
 					line = line[i+quoteLen:]
 					pos.col += i + quoteLen
 					switch rn := nextRune(line); {
-					case rn == '"':
+					case rn == r.Quote:
 						// `""` sequence (append quote).
-						r.recordBuffer = append(r.recordBuffer, '"')
+						r.recordBuffer = append(r.recordBuffer, []byte(string(r.Quote))...)
 						line = line[quoteLen:]
 						pos.col += quoteLen
 					case rn == r.Comma:
@@ -397,7 +406,7 @@ parseField:
 						break parseField
 					case r.LazyQuotes:
 						// `"` sequence (bare quote).
-						r.recordBuffer = append(r.recordBuffer, '"')
+						r.recordBuffer = append(r.recordBuffer, []byte(string(r.Quote))...)
 					default:
 						// `"*` sequence (invalid non-escaped quote).
 						err = &ParseError{StartLine: recLine, Line: r.numLine, Column: pos.col - quoteLen, Err: ErrQuote}
